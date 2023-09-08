@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 import time
 from skimage import morphology
-import openpyxl
+
 # Import thu vien segmentation_models
 from segmentation_models.metrics import iou_score
 from segmentation_models import Unet
@@ -19,7 +19,7 @@ sm.framework()
 from matplotlib import pyplot as plt
 
 # Dinh nghia bien
-data_path  = "dataset"
+data_path  = "TEST"
 w, h = 256, 256
 batch_size = 16
 
@@ -135,7 +135,7 @@ def load_path(data_path):
 image_path, mask_path = load_path(data_path)
 
 # Chia du lieu train, test
-image_train, image_test, mask_train, mask_test = train_test_split(image_path, mask_path, test_size=0.01)
+image_train, image_test, mask_train, mask_test = train_test_split(image_path, mask_path, test_size=0.05)
 
 # Tao dataset va dataloader
 train_dataset = Dataset(image_train, mask_train, w, h)
@@ -156,185 +156,128 @@ model= Unet(backbone_name='resnet34',encoder_weights="imagenet",classes=1,activa
 #model= Unet(input_shape=(256, 256, 3), classes=1, activation='sigmoid',  encoder_features='default', decoder_block_type='upsampling', decoder_filters=(256, 128, 64, 32, 16), decoder_use_batchnorm=True)
 loss1 = sm.losses.categorical_focal_dice_loss
 #model.compile(optimizer=opt,loss=loss1,metrics=[iou_score])
-model.compile(optimizer="Adam",loss=loss1,metrics=[iou_score,'accuracy'])
+model.compile(optimizer=opt,loss=loss1,metrics=[iou_score,'accuracy'])
 # Train model
-#is_train = False
 is_train = True
 
 if is_train:
     from keras.callbacks import ModelCheckpoint
-    filepath="checkpoint.hdf5"
+    filepath="checkpoint13.hdf5"
     callback = ModelCheckpoint(filepath, monitor='val_iou_score', verbose=1, save_best_only=True,mode='max')
 
     #history=model.fit_generator( train_loader, validation_data=test_loader, epochs=10, callbacks=[callback])
-    history = model.fit_generator(train_loader, validation_data=test_loader,
-                                  epochs=10, callbacks=[callback])
+    history = model.fit_generator(train_loader, validation_data=test_loader, epochs=10, callbacks=[callback])
     final_accuracy = history.history["val_accuracy"][-5:]
     print("FINAL ACCURACY MEAN-5: ", np.mean(final_accuracy))
-    print(history.history['accuracy'])
-    print(history.history['iou_score'])
     plt.plot(history.history['accuracy'])
-    plt.plot(history.history['iou_score'])
     plt.show()
 else:
     # Load model de test
-    row = 500
-    column = 2
-    j=0
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    model.load_weights("checkpoint.hdf5")
-    test_path='TEST/Class1'
-    test_mask='TEST/Class1_mask'
-    test_folder = os.path.join(test_path)
-    mask_folder = os.path.join(test_mask)
-    for file in os.listdir(test_folder):
-        if file.endswith("jpg"):
-            print(file)
-            j+=1
-            # Read image file
-            test_file = os.path.join(test_folder, file)
-            mask_file = os.path.join(mask_folder, file)
+    model.load_weights("checkpoint13.hdf5")
+
+    ids = range(len(image_test))
+    index = random.sample(ids, 20)
+
+    #import matplotlib.pyplot as plt
+
+    for id in index:
+
+        # Anh dau vao, ko phai mask
+        image = cv2.imread(image_test[id])
+        image1=image
+        image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
+
+        image = cv2.resize(image, (256, 256))
+        # Dua qua model de predicted segmentation map
+        img_expand = image[np.newaxis, ...]
+        mask_predict = model.predict(image[np.newaxis, :, :, :])
+        #prediction1 = model1.predict(image)
+        # Doc mask thuc te
+        image_mask = cv2.imread(mask_test[id], cv2.IMREAD_UNCHANGED)
+        image_mask = cv2.resize(image_mask, (256, 256))
+
+        plt.figure(figsize=(10, 6))
+        plt.subplot(221)
+        plt.title("Hình ảnh sản phẩm")
+        plt.imshow(image1)
+        plt.subplot(222)
+        plt.title("Vết lỗi thật")
+        plt.imshow(image_mask)
+        plt.subplot(223)
+        plt.title("Vết lỗi dự đoán")
+        #z = mask_predict[0, :, :]
+        t = mask_predict[0,:,:]
+        z=t
+        plt.imshow(t)
+
+        plt.subplot(224)
+
+        z[z < 0.5] = 0
+        z[z >= 0.5] = 1
+
+        ##kernel2 = np.ones((20, 20), np.uint8)
+        #kernel3 = np.ones((10, 10), np.uint8)
+
+        kernel = morphology.diamond(3)
+        kernel2 = morphology.diamond(7)
+        kernel3 = morphology.diamond(4)
+        kernel4 = morphology.ball(10)
+
+        #kernel2 = cv2.getGaussianKernel(10,5)
+        h, w = image.shape[:2]
+        mask = np.zeros((h + 2, w + 2), np.uint8)
 
 
 
-            # Anh dau vao, ko phai mask
-            image = cv2.imread(test_file)
-            image1=image
-            image1 = cv2.cvtColor(image1, cv2.COLOR_BGR2RGB)
 
-            image = cv2.resize(image, (256, 256))
-            # Dua qua model de predicted segmentation map
-            img_expand = image[np.newaxis, ...]
-            mask_predict = model.predict(image[np.newaxis, :, :, :])
-            #prediction1 = model1.predict(image)
-            # Doc mask thuc te
-            image_mask = cv2.imread(mask_file, cv2.IMREAD_UNCHANGED)
-            image_mask = cv2.resize(image_mask, (256, 256))
-
-
-
-            plt.figure(figsize=(10, 10))
-            plt.subplot(221)
-            plt.title("Hình ảnh sản phẩm")
-            plt.imshow(image1)
-            plt.subplot(222)
-            plt.title("Vết lỗi mong muốn")
-            plt.imshow(image_mask)
-            g = image_mask
-
-            #g[g < 0.5] = 0
-            #g[g >= 0.5] = 1
-
-
-
-
-
-
-
-            start_time = time.time()
-
-
-            z= mask_predict[0,:,:]
-            z1 = mask_predict[0, :, :]
-
-
-            z[z < 0.5] = 0
-            z[z >= 0.5] = 1
-
-            kernel = morphology.diamond(3)
-            kernel2 = morphology.diamond(7)
-            kernel3 = morphology.diamond(4)
-            kernel4 = morphology.disk(8)
-            kernel5 = morphology.disk(4)
-            kernel6 = morphology.disk(3)
-
-            #kernel2 = cv2.getGaussianKernel(10,5)
-            h, w = image.shape[:2]
+        def fillhole(input_image):
+            '''
+            input gray binary image  get the filled image by floodfill method
+            Note: only holes surrounded in the connected regions will be filled.
+            :param input_image:
+            :return:
+            '''
+            im_flood_fill = input_image.copy()
+            h, w = input_image.shape[:2]
             mask = np.zeros((h + 2, w + 2), np.uint8)
+            im_flood_fill = im_flood_fill.astype("uint8")
+            cv2.floodFill(im_flood_fill, mask, (0, 0), 255)
+            im_flood_fill_inv = cv2.bitwise_not(im_flood_fill)
+            img_out = im_flood_fill_inv
+            return img_out
+
+        z = cv2.morphologyEx(z, cv2.MORPH_GRADIENT, kernel)
+        z = cv2.dilate(z, kernel3)
+        z = cv2.dilate(z, kernel3)
+        z=fillhole(z)
+        z=cv2.erode(z, kernel3)
+        z = cv2.erode(z, kernel3)
+        z = cv2.erode(z, kernel3)
+
+        contours = cv2.findContours(z, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        contours = imutils.grab_contours(contours)
+        contours = sorted(contours, key=cv2.contourArea, reverse=False)
+
+        number = 0
+        # loop over our contours
+        for c in contours:
+            (x, y, w, h) = cv2.boundingRect(c)
+            print(x, y, w, h)
+            # cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            # approximate the contour
+
+            cv2.rectangle(z, (x-5, y-5), (x + w+5, y + h+5), (255,0,0), 1)
+            number += 1
+
+        print("Number of Contours found = " + str(number))
+
+        plt.imshow(z)
+
+
+        plt.show()
 
 
 
 
-            def fillhole(input_image):
-                '''
-                input gray binary image  get the filled image by floodfill method
-                Note: only holes surrounded in the connected regions will be filled.
-                :param input_image:
-                :return:
-                '''
-                im_flood_fill = input_image.copy()
-                h, w = input_image.shape[:2]
-                mask = np.zeros((h + 2, w + 2), np.uint8)
-                im_flood_fill = im_flood_fill.astype("uint8")
-                cv2.floodFill(im_flood_fill, mask, (0, 0), 255)
-                im_flood_fill_inv = cv2.bitwise_not(im_flood_fill)
-                img_out = im_flood_fill_inv
-                return img_out
-
-            z = cv2.morphologyEx(z, cv2.MORPH_GRADIENT, kernel)
-            z = cv2.dilate(z, kernel5)
-            z = cv2.dilate(z, kernel5)
-            z = fillhole(z)
-            #z = cv2.dilate(z, kernel3)
-            z = cv2.erode(z, kernel6)
-            z = cv2.erode(z, kernel6)
-            z = cv2.erode(z, kernel6)
-            z = cv2.erode(z, kernel6)
-
-            t=z
-            I = (g & t)
-            U = (g | t)
-            I[I < 0.5] = 0
-            I[I >= 0.5] = 1
-            U[U < 0.5] = 0
-            U[U >= 0.5] = 1
-            nI = np.sum(I)
-            nU = np.sum(U)
-            IOU = nI / nU
-            print(nI)
-            print(nU)
-            print(IOU)
-            plt.subplot(223)
-            plt.title("Vết lỗi dự đoán || IoU=" + str(IOU))
-            plt.imshow(t)
-
-            contours = cv2.findContours(z, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-            contours = imutils.grab_contours(contours)
-            contours = sorted(contours, key=cv2.contourArea, reverse=False)
-
-            number = 0
-            # loop over our contours
-            for c in contours:
-                (x, y, w, h) = cv2.boundingRect(c)
-                print(x, y, w, h)
-                if (w > 6) or (h>6):
-                # cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                # approximate the contour
-
-                    cv2.rectangle(z, (x-5, y-5), (x + w+5, y + h+5), (255,0,0), 1)
-                    number += 1
-
-            print("Number of Contours found = " + str(number))
-            if number >=1:
-                note="Dự đoán: có lỗi"
-            else:
-                note="Dự đoán: không lỗi"
-
-            end_time = time.time()
-            elapsed_time = end_time - start_time
 
 
-            plt.subplot(224)
-            plt.title(note+"||Time= "+format(elapsed_time))
-            v1=IOU
-            v2=elapsed_time
-            ws.cell(column=1, row=j + 1, value=v1)
-            ws.cell(column=2, row=j + 1, value=v2)
-            #plt.title(note + "||Time= " + round(elapsed_time,6))
-
-            plt.imshow(z)
-            #plt.show()
-            plt.savefig(file)
-
-    wb.save('TEST2.xlsx')
