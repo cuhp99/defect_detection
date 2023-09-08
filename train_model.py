@@ -158,8 +158,8 @@ loss1 = sm.losses.categorical_focal_dice_loss
 #model.compile(optimizer=opt,loss=loss1,metrics=[iou_score])
 model.compile(optimizer="Adam",loss=loss1,metrics=[iou_score,'accuracy'])
 # Train model
-#is_train = False
-is_train = True
+is_train = False
+#is_train = True
 
 if is_train:
     from keras.callbacks import ModelCheckpoint
